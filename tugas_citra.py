@@ -14,12 +14,15 @@ st.write("Aplikasi ini memungkinkan Anda untuk melakukan analisis histogram, thr
 
 # --- Fungsi Bantuan ---
 
-# Menggunakan cache agar gambar tidak di-download ulang setiap kali ada interaksi
 @st.cache_data
 def load_sample_image(url):
     """Fungsi untuk mengunduh dan memuat gambar contoh dari URL."""
     try:
-        response = requests.get(url)
+        # Header untuk menyamar sebagai browser agar tidak diblokir (Error 403)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers)
         response.raise_for_status() # Cek jika ada error
         img = Image.open(io.BytesIO(response.content)).convert("RGB")
         return np.array(img)
@@ -88,7 +91,7 @@ if image_to_process is not None:
         info_message = f"Metode: Mean Grayscale. Threshold dari rata-rata intensitas adalah **{threshold_value}**."
 
     # Terapkan thresholding berdasarkan nilai yang didapat
-    _, binary_image = cv2.threshold(img_gray, threshold_value, 255, cv2.THRESH_BINARY)
+    _, binary_image = cv2.threshold(img_gray, int(threshold_value), 255, cv2.THRESH_BINARY)
     
     # Menampilkan Citra Asli
     st.header("Citra Asli")

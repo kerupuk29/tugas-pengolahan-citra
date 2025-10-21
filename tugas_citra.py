@@ -3,13 +3,34 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-import io # Diperlukan untuk tombol download
+import io
+import requests # Diperlukan untuk download gambar contoh
+
+# --- Konfigurasi Halaman & Styling ---
+st.set_page_config(layout="wide", page_title="Editor Citra Digital")
+
+st.title("🖼️ Editor Citra Digital Interaktif")
+st.write("Aplikasi ini memungkinkan Anda untuk melakukan analisis histogram, thresholding biner, dan equalisasi histogram pada sebuah gambar.")
 
 # --- Fungsi Bantuan ---
+
+# Menggunakan cache agar gambar tidak di-download ulang setiap kali ada interaksi
+@st.cache_data
+def load_sample_image(url):
+    """Fungsi untuk mengunduh dan memuat gambar contoh dari URL."""
+    try:
+        response = requests.get(url)
+        response.raise_for_status() # Cek jika ada error
+        img = Image.open(io.BytesIO(response.content)).convert("RGB")
+        return np.array(img)
+    except requests.exceptions.RequestException as e:
+        st.error(f"Gagal memuat gambar contoh: {e}")
+        return None
+
 def plot_histogram(image, title, ax, threshold_value=None):
     """Fungsi untuk menghitung dan memplot histogram gambar."""
     if len(image.shape) == 3: # Gambar RGB
-        color = ('b', 'g', 'r')
+        color = ('r', 'g', 'b')
         for i, col in enumerate(color):
             histr = cv2.calcHist([image], [i], None, [256], [0, 256])
             ax.plot(histr, color=col)
@@ -19,94 +40,113 @@ def plot_histogram(image, title, ax, threshold_value=None):
         histr = cv2.calcHist([image], [0], None, [256], [0, 256])
         ax.plot(histr, color='gray')
         ax.set_title(title)
-        ax.set_xlabel("Intensitas") # Menambahkan label sumbu X
-        ax.set_ylabel("Frekuensi") # Menambahkan label sumbu Y
+        ax.set_xlabel("Intensitas")
+        ax.set_ylabel("Frekuensi")
         ax.set_xlim([0, 256])
-        # -- PENAMBAHAN BARU: Menggambar garis threshold --
         if threshold_value is not None:
             ax.axvline(x=threshold_value, color='r', linestyle='--', label=f'Threshold={int(threshold_value)}')
             ax.legend()
-    return histr.flatten().astype(int)
 
-# --- Konfigurasi Halaman Streamlit ---
-st.set_page_config(layout="wide", page_title="Pengolahan Citra Digital")
-st.title("Tugas: Thresholding & Equalization")
+# --- Sidebar untuk Pengaturan ---
+st.sidebar.title("⚙️ Panel Pengaturan")
 
-# --- Sidebar untuk Upload File ---
-st.sidebar.header("Panel Kontrol")
-uploaded_file = st.sidebar.file_uploader("Upload sebuah gambar (JPG, PNG, JPEG)", type=["jpg", "png", "jpeg"])
+# 1. Pengaturan Input Gambar
+st.sidebar.header("1. Pengaturan Input")
+use_sample = st.sidebar.checkbox("Gunakan gambar contoh (Lena)", value=True)
+uploaded_file = st.sidebar.file_uploader("Atau upload gambar Anda", type=["jpg", "png", "jpeg"], disabled=use_sample)
 
-if uploaded_file is None:
-    st.info("Silakan upload sebuah gambar melalui sidebar untuk memulai analisis.")
-else:
-    # --- Membaca dan Menampilkan Gambar Asli ---
-    try:
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        original_image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        img_rgb = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-        img_gray = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
+image_to_process = None
+if use_sample:
+    # URL gambar Lena yang umum digunakan dalam pengolahan citra
+    lena_url = "https://upload.wikimedia.org/wikipedia/en/7/7d/Lenna_%28test_image%29.png"
+    image_to_process = load_sample_image(lena_url)
+elif uploaded_file:
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    image_to_process = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    image_to_process = cv2.cvtColor(image_to_process, cv2.COLOR_BGR2RGB) # Konversi ke RGB
 
-        st.header("1. Citra Asli")
-        st.image(img_rgb, caption="Gambar yang Anda upload.", use_container_width=True)
-        st.divider()
+# --- Panel Utama ---
+if image_to_process is not None:
+    img_gray = cv2.cvtColor(image_to_process, cv2.COLOR_RGB2GRAY)
 
-        # --- Tugas 1: Tampilkan Histogram RGB dan Greyscale ---
-        st.header("2. Analisis Histogram")
-        
-        # --- Thresholding DULU untuk mendapatkan nilainya ---
-        threshold_value, binary_image = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # 2. Opsi Thresholding di Sidebar
+    st.sidebar.header("2. Opsi Thresholding")
+    threshold_method = st.sidebar.radio(
+        "Pilih Metode Thresholding",
+        ["Manual", "Otsu Otomatis", "Mean Grayscale"]
+    )
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Histogram RGB")
+    info_message = ""
+    if threshold_method == "Manual":
+        threshold_value = st.sidebar.slider("Atur Threshold Manual", 0, 255, 127)
+        info_message = f"Metode: Manual. Threshold diatur ke **{threshold_value}**."
+    elif threshold_method == "Otsu Otomatis":
+        threshold_value, _ = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        info_message = f"Metode: Otsu Otomatis. Ditemukan threshold optimal di **{int(threshold_value)}**."
+    elif threshold_method == "Mean Grayscale":
+        threshold_value = int(np.mean(img_gray))
+        info_message = f"Metode: Mean Grayscale. Threshold dari rata-rata intensitas adalah **{threshold_value}**."
+
+    # Terapkan thresholding berdasarkan nilai yang didapat
+    _, binary_image = cv2.threshold(img_gray, threshold_value, 255, cv2.THRESH_BINARY)
+    
+    # Menampilkan Citra Asli
+    st.header("Citra Asli")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.image(image_to_process, caption="Citra Asli (RGB)", use_container_width=True)
+    with col2:
+        st.image(img_gray, caption="Citra Grayscale", use_container_width=True)
+    st.divider()
+
+    # Membuat Tabs untuk Hasil Analisis
+    tab1, tab2, tab3 = st.tabs(["Analisis Histogram", "Thresholding Biner", "Equalisasi Histogram"])
+
+    with tab1:
+        st.header("Grafik Histogram")
+        col_hist1, col_hist2 = st.columns(2)
+        with col_hist1:
             fig_rgb, ax_rgb = plt.subplots()
-            plot_histogram(original_image, "Histogram RGB", ax_rgb)
+            plot_histogram(image_to_process, "Histogram RGB", ax_rgb)
             st.pyplot(fig_rgb)
-
-        with col2:
-            st.subheader("Histogram Grayscale dengan Garis Threshold")
+        with col_hist2:
             fig_gray, ax_gray = plt.subplots()
-            # -- PENAMBAHAN BARU: Memasukkan threshold_value ke fungsi plot --
-            plot_histogram(img_gray, "Histogram dengan Garis Threshold", ax_gray, threshold_value=threshold_value)
+            plot_histogram(img_gray, "Histogram Grayscale", ax_gray)
             st.pyplot(fig_gray)
-            
-        st.divider()
 
-        # --- Tugas 2: Thresholding & Citra Biner ---
-        st.header("3. Thresholding Menjadi Citra Biner")
-        st.success(f"**Nilai Threshold yang ditemukan (Otsu's Method):** `{int(threshold_value)}`")
-        st.image(binary_image, caption=f"Citra Biner (Threshold={int(threshold_value)})", use_container_width=True)
+    with tab2:
+        st.header("Segmentasi Citra Menjadi Hitam & Putih")
+        st.info(info_message)
+        col_bin1, col_bin2 = st.columns(2)
+        with col_bin1:
+            st.image(binary_image, caption=f"Hasil Thresholding", use_container_width=True)
+            # Logika Tombol Download
+            pil_img = Image.fromarray(binary_image)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            st.download_button(
+                label="Download Citra Biner (.png)",
+                data=byte_im,
+                file_name="citra_biner.png",
+                mime="image/png"
+            )
+        with col_bin2:
+            fig_bin, ax_bin = plt.subplots()
+            plot_histogram(img_gray, "Histogram dengan Garis Threshold", ax_bin, threshold_value=threshold_value)
+            st.pyplot(fig_bin)
 
-        # -- PENAMBAHAN BARU: Tombol Download ---
-        # Konversi gambar biner (numpy array) ke format file PNG di memori
-        pil_img = Image.fromarray(binary_image)
-        buf = io.BytesIO()
-        pil_img.save(buf, format="PNG")
-        byte_im = buf.getvalue()
-
-        st.download_button(
-            label="Download Citra Biner (.png)",
-            data=byte_im,
-            file_name="citra_biner.png",
-            mime="image/png"
-        )
-
-        st.divider()
-
-        # --- Tugas 3: Histogram Equalization ---
-        st.header("4. Histogram Equalization")
+    with tab3:
+        st.header("Peningkatan Kontras Citra")
         equalized_image = cv2.equalizeHist(img_gray)
-        
         col_eq1, col_eq2 = st.columns(2)
         with col_eq1:
-            st.subheader("Citra Hasil Equalization")
-            st.image(equalized_image, caption="Hasil setelah proses equalization.", use_container_width=True)
+            st.image(equalized_image, caption="Hasil Equalisasi Histogram", use_container_width=True)
         with col_eq2:
-            st.subheader("Histogram Hasil Equalization")
             fig_eq, ax_eq = plt.subplots()
-            plot_histogram(equalized_image, "Histogram Setelah Equalization", ax_eq)
+            plot_histogram(equalized_image, "Histogram Setelah Equalisasi", ax_eq)
             st.pyplot(fig_eq)
-            st.info("Perhatikan bagaimana histogram menjadi lebih merata setelah equalization.")
+        st.info("Equalisasi Histogram meratakan distribusi intensitas piksel untuk meningkatkan kontras global pada gambar.")
 
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses gambar. Pastikan file gambar tidak rusak. Error: {e}")
+else:
+    st.warning("Silakan upload gambar atau gunakan gambar contoh untuk memulai.")

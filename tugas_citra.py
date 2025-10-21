@@ -43,7 +43,7 @@ else:
         img_gray = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
 
         st.header("1. Citra Asli")
-        st.image(img_rgb, caption="Gambar yang Anda upload.", use_column_width=True)
+        st.image(img_rgb, caption="Gambar yang Anda upload.", use_container_width=True)
 
         st.divider()
 
@@ -81,7 +81,7 @@ else:
         threshold_value, binary_image = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         st.success(f"**Nilai Threshold yang ditemukan (Otsu's Method):** `{int(threshold_value)}`")
-        st.image(binary_image, caption=f"Citra Biner dengan Threshold = {int(threshold_value)}", use_column_width=True)
+        st.image(binary_image, caption=f"Citra Biner dengan Threshold = {int(threshold_value)}", use_container_width=True)
 
         st.divider()
 
@@ -92,7 +92,7 @@ else:
         col_eq1, col_eq2 = st.columns(2)
         with col_eq1:
             st.subheader("Citra Hasil Equalization")
-            st.image(equalized_image, caption="Hasil setelah proses equalization.", use_column_width=True)
+            st.image(equalized_image, caption="Hasil setelah proses equalization.", use_container_width=True)
         with col_eq2:
             st.subheader("Histogram Hasil Equalization")
             fig_eq, ax_eq = plt.subplots()
